@@ -14,8 +14,7 @@ def reveal(path: str):
     path = os.path.normpath(path)
     if os.path.isfile(path):
         subprocess.Popen(f'explorer /select,"{path}"')
-    else:
-        os.makedirs(path, exist_ok=True)
+    elif os.path.isdir(path):   # never create the folder: an empty plugin folder made Chrome report a missing manifest
         os.startfile(path)
 
 

@@ -222,6 +222,11 @@ class ExtensionWizard(QWidget):
     def _chromium(self):
         kind, name = self.kind, browsers.NAMES[self.kind]
         folder = browsers.plugin_folder(kind)
+        if not browsers.files_prepared(kind):   # never leave the user with a missing or empty folder
+            try:
+                browsers.prepare_files(kind)
+            except OSError as e:
+                self.error.setText(e.strerror or str(e))
         if self.step == 0:
             self._title(_("Prepare the extension files"))
             self._text(_("{0} does not allow apps to install extensions automatically, so the extension is loaded from a folder. The files are placed in:", name))
