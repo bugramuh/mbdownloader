@@ -7,6 +7,7 @@ import tempfile
 import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from urllib.parse import quote
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -14,6 +15,15 @@ from mbdownloader.downloader import HTTPStatusError, SegmentedDownloader  # noqa
 
 DATA = os.urandom(6 * 1024 * 1024 + 12345)
 SHA = hashlib.sha256(DATA).hexdigest()
+TR = "Çalışma Öğüt İğne ğüşiöç.pdf"
+# Turkish names as servers really send them (header values are put on the wire as Latin-1 bytes)
+CD = {
+    "/cd": "attachment; filename*=UTF-8''g%C3%BCzel%20dosya.bin",
+    "/cd-utf8": f'attachment; filename="{TR}"'.encode("utf-8").decode("latin-1"),
+    "/cd-pct": 'attachment; filename="' + quote(TR) + '"',
+    "/cd-cp1254": f'attachment; filename="{TR}"'.encode("cp1254").decode("latin-1"),
+    "/cd-star-cp1254": "attachment; filename*=iso-8859-9''" + quote(TR, encoding="cp1254"),
+}
 state = {"throttle_left": 0, "max_parallel": 0, "parallel": 0, "slow": 0.0, "cookie_seen": [], "range_requests": 0}
 lock = threading.Lock()
 
@@ -65,7 +75,7 @@ class H(BaseHTTPRequestHandler):
             if path == "/forbidden":
                 self._send_body(403, b"no")
                 return
-            if path in ("/ranged", "/throttle", "/cd"):
+            if path in ("/ranged", "/throttle") or path in CD:
                 if rng:
                     state["range_requests"] += 1
                 if path == "/throttle" and rng and not rng.startswith("bytes=0-0") and state["throttle_left"] > 0:
@@ -81,8 +91,8 @@ class H(BaseHTTPRequestHandler):
                 end = int(m.group(2)) if m.group(2) else len(DATA) - 1
                 end = min(end, len(DATA) - 1)
                 extra = {"Content-Range": f"bytes {start}-{end}/{len(DATA)}", "Accept-Ranges": "bytes"}
-                if path == "/cd":
-                    extra["Content-Disposition"] = "attachment; filename*=UTF-8''g%C3%BCzel%20dosya.bin"
+                if path in CD:
+                    extra["Content-Disposition"] = CD[path]
                 self._send_body(206, DATA[start:end + 1], extra)
                 return
             self._send_body(404, b"nf")
@@ -132,6 +142,15 @@ def main():
     check("multi: UTF-8 Content-Disposition name", res["probe"].suggested_name == "güzel dosya.bin", str(res["probe"].suggested_name))
     check("multi: used 8 segments", len(res["segs"]) == 8, str(len(res["segs"])))
     check("multi: parallel connections used", state["max_parallel"] >= 4, str(state["max_parallel"]))
+
+    # 1b. Turkish characters in the server-suggested name
+    for route in ("/cd-utf8", "/cd-pct", "/cd-cp1254", "/cd-star-cp1254"):
+        dl, done, res, part = run_download(base + route, 2)
+        done.wait(30)
+        check(f"turkish name {route}", res["probe"] and res["probe"].suggested_name == TR, repr(res["probe"] and res["probe"].suggested_name))
+    from mbdownloader.store import file_name_from_url
+    check("turkish name from URL (utf-8)", file_name_from_url("http://x/" + quote(TR)) == TR)
+    check("turkish name from URL (cp1254)", file_name_from_url("http://x/" + quote(TR, encoding="cp1254")) == TR)
 
     # 2. Redirect + credentials only to the original origin
     state["cookie_seen"].clear()

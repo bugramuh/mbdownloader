@@ -5,13 +5,13 @@ import os
 import re
 import time
 from dataclasses import dataclass, field
-from urllib.parse import unquote, urlsplit
+from urllib.parse import urlsplit
 
 from PySide6.QtCore import QObject, QTimer, Signal
 from PySide6.QtWidgets import QMessageBox
 
 from . import cookies, paths, tools, video, winshell
-from .downloader import HTTPStatusError, SegmentedDownloader, browser_might_help, describe_error
+from .downloader import HTTPStatusError, SegmentedDownloader, browser_might_help, describe_error, unquote_name
 from .i18n import _
 from .models import (ACTIVE_STATES, CANCELLED, COMPLETED, DOWNLOADING, FAILED, PAUSED, PROBING, QUEUED, DownloadItem,
                      category_label, file_ext)
@@ -37,7 +37,7 @@ class NewDownloadRequest:
 
 def file_name_from_url(url: str) -> str:
     parts = urlsplit(url)
-    name = unquote(parts.path.rstrip("/").rsplit("/", 1)[-1]) if parts.path else ""
+    name = unquote_name(parts.path.rstrip("/").rsplit("/", 1)[-1]) if parts.path else ""
     return name or parts.hostname or "download"
 
 

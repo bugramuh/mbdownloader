@@ -118,20 +118,49 @@ def _set_sparse(f) -> None:
         pass
 
 
+def fix_header_encoding(s: str) -> str:
+    """http.client decodes header bytes as Latin-1, but servers send UTF-8 (or legacy cp1254): re-decode."""
+    try:
+        raw = s.encode("latin-1")
+    except UnicodeEncodeError:
+        return s    # already real Unicode
+    for enc in ("utf-8", "cp1254"):
+        try:
+            return raw.decode(enc)
+        except UnicodeDecodeError:
+            pass
+    return s
+
+
+def unquote_name(s: str) -> str:
+    """Percent-decodes as UTF-8, falling back to cp1254 (legacy Turkish links)."""
+    for enc in ("utf-8", "cp1254"):
+        try:
+            return unquote(s, encoding=enc, errors="strict")
+        except UnicodeDecodeError:
+            pass
+    return unquote(s)
+
+
 def file_name_from_content_disposition(header: str | None) -> str | None:
     if not header:
         return None
-    m = re.search(r"filename\*\s*=\s*[^']*'[^']*'([^;]+)", header, re.I)
+    header = fix_header_encoding(header)
+    m = re.search(r"filename\*\s*=\s*([^']*)'[^']*'([^;]+)", header, re.I)
     if m:
-        d = unquote(m.group(1).strip()).strip('"')
+        try:
+            d = unquote(m.group(2).strip(), encoding=m.group(1) or "utf-8", errors="strict")
+        except (LookupError, UnicodeDecodeError):
+            d = unquote_name(m.group(2).strip())
+        d = d.strip('"')
         if d:
             return d
     m = re.search(r'filename\s*=\s*"([^"]*)"', header, re.I)
     if m:
-        return m.group(1) or None
+        return unquote_name(m.group(1)) or None
     m = re.search(r"filename\s*=\s*([^;]+)", header, re.I)
     if m:
-        return m.group(1).strip() or None
+        return unquote_name(m.group(1).strip()) or None
     return None
 
 
